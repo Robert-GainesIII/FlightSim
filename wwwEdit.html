@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dino Duel</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+	#intro-screen {
+	  position: absolute;
+	  top: 0; left: 0;
+	  width: 100%; height: 100%;
+	  background: radial-gradient(ellipse at center, #1b1b1b 0%, #000000 100%);
+	  display: flex;
+	  justify-content: center;
+	  align-items: center;
+	  z-index: 10;
+	}
+
+	.intro-overlay {
+	  text-align: center;
+	  color: #fff;
+	  animation: fadeIn 2s ease-out;
+	}
+
+	.intro-overlay h1 {
+	  font-size: 3em;
+	  margin-bottom: 1rem;
+	  text-shadow: 0 0 10px #ff4400;
+	}
+
+	.intro-overlay .subtitle {
+	  font-style: italic;
+	  margin-top: 0.5rem;
+	  font-size: 1.1rem;
+	  color: #aaa;
+	}
+
+	#start-btn {
+	  background-color: #ff4400;
+	  border: none;
+	  padding: 15px 30px;
+	  font-size: 1.2em;
+	  border-radius: 10px;
+	  cursor: pointer;
+	  box-shadow: 0 0 15px #ff4400;
+	  transition: background 0.3s ease;
+	}
+
+	#start-btn:hover {
+	  background-color: #ff2200;
+	  box-shadow: 0 0 25px #ff2200;
+	}
+
+	@keyframes fadeIn {
+	  from { opacity: 0; transform: scale(0.95); }
+	  to   { opacity: 1; transform: scale(1); }
+	}
+
+#playerHealthBar {
+  display: none; /* Hidden by default */
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 300px;
+  height: 25px;
+  border: 2px solid #555;
+  background-color: #222;
+  border-radius: 5px;
+  overflow: hidden;
+  z-index: 1000;
+}
+
+#healthFill {
+  height: 100%;
+  width: 100%; /* start full */
+  background: linear-gradient(90deg, #4caf50, #81c784);
+  transition: width 0.3s ease;
+}
+
+#gameOverScreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0,0,0,0.85);
+  color: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+  flex-direction: column;
+  font-family: 'Treasure Map Dead', cursive; /* for prehistoric vibe! */
+}
+
+#gameOverContent h1 {
+  font-size: 4em;
+  margin-bottom: 20px;
+}
+
+#restartButton {
+  font-size: 1.5em;
+  padding: 10px 30px;
+  cursor: pointer;
+  background-color: #4caf50;
+  border: none;
+  border-radius: 10px;
+  color: white;
+  transition: background-color 0.3s ease;
+}
+#restartButton:hover {
+  background-color: #388e3c;
+}
+    
+  </style>
+</head>
+<body>
+<div id="intro-screen">
+  <div class="intro-overlay">
+    <h1>Dino Clash: Time Extinction</h1>
+    <button id="start-btn">Start Game</button>
+    <p class="subtitle">A time-traveling dino battle through history</p>
+	
+  </div>
+  
+</div>
+<!-- Add this inside your HTML body -->
+<div id="about-screen" style="display:none; position: absolute; top:0; left:0; width: 100vw; height: 100vh; background: #1a1a1a; color: #d9b382; font-family: 'Papyrus', cursive; overflow: hidden; z-index: 100;">
+  <button id="close-about" style="position: absolute; top: 20px; right: 30px; font-size: 18px; background: transparent; border: 2px solid #d9b382; color: #d9b382; padding: 8px 12px; cursor: pointer;">Close</button>
+  
+  <div style="display: flex; justify-content: space-around; align-items: center; height: 100%;">
+    <div id="trex-container" style="width: 45%; height: 80%; background: #2f2f2f; border-radius: 10px; box-shadow: 0 0 20px #aa5533;">
+      <h2 style="text-align: center; margin-top: 10px;">T-Rex</h2>
+      <div id="trex-canvas" style="width: 100%; height: 70%;"></div>
+      <p style="padding: 15px; font-size: 16px;">
+        The mighty Tyrannosaurus rex — fierce predator with powerful jaws.<br>
+        Use it to charge and deliver devastating bite attacks!
+      </p>
+    </div>
+
+    <div id="triceratops-container" style="width: 45%; height: 80%; background: #2f2f2f; border-radius: 10px; box-shadow: 0 0 20px #337755;">
+      <h2 style="text-align: center; margin-top: 10px;">Triceratops</h2>
+      <div id="triceratops-canvas" style="width: 100%; height: 70%;"></div>
+      <p style="padding: 15px; font-size: 16px;">
+        The sturdy Triceratops, known for its impressive horns and defense.<br>
+        Use it to block attacks and protect your territory.
+      </p>
+    </div>
+  </div>
+</div>
+
+<button id="show-about" style="position: absolute; top: 20px; left: 20px; font-size: 18px; background: transparent; border: 2px solid #d9b382; color: #d9b382; padding: 8px 12px; cursor: pointer; z-index: 110;">
+  About Game
+</button>
+<div id="playerHealthBar">
+  <div id="healthFill"></div>
+</div>
+
+<div id="gameOverScreen" style="display:none;">
+  <div id="gameOverContent">
+    <h1>Game Over</h1>
+    <button id="restartButton">Restart</button>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'https://esm.sh/three@0.157.0';
+import { GLTFLoader } from 'https://esm.sh/three@0.157.0/examples/jsm/loaders/GLTFLoader';
+
+let scene, camera, renderer, dinosaur, clock, mixer;
+const keysPressed = {};
+let zoomLevel = 10;
+const animations = {};
+let currentAction = null;
+const treeColliders = [];
+let raycaster = new THREE.Raycaster();
+let ground; // define globally so we can raycast to it
+let playerHealth = 100;
+let lastAttackTime = 0;
+const attackCooldown = 1; // seconds
+let enemies = [];
+let isAttacking = false;
+const deathParticlesArray = [];
+const gameOverScreen = document.getElementById('gameOverScreen');
+const restartButton = document.getElementById('restartButton');
+
+let gameStarted = false;
+
+document.getElementById('start-btn').addEventListener('click', () => {
+  document.getElementById('intro-screen').style.display = 'none';
+  document.getElementById('playerHealthBar').style.display = 'block';
+  gameStarted = true;
+  // Any other game init logic
+})
+
+init();
+animate();
+
+
+const aboutScreen = document.getElementById('about-screen');
+const showAboutBtn = document.getElementById('show-about');
+const closeAboutBtn = document.getElementById('close-about');
+
+showAboutBtn.onclick = () => {
+  aboutScreen.style.display = 'block';
+  initAboutDinos();
+};
+
+closeAboutBtn.onclick = () => {
+  aboutScreen.style.display = 'none';
+  cleanupAboutDinos();
+};
+
+
+const maxPlayerHealth = 100;
+const healthFill = document.getElementById('healthFill');
+
+
+
+function onGameOver() {
+  gameOverScreen.style.display = 'flex';
+  // Optionally pause animation/game loop here
+}
+
+restartButton.addEventListener('click', () => {
+  gameOverScreen.style.display = 'none';
+  resetGame();
+});
+
+function resetGame() {
+  playerHealth = maxPlayerHealth;
+  updatePlayerHealth(0);
+  // Reset other game states, positions, enemies, etc.
+}
+
+
+function updatePlayerHealth(amount) {
+  playerHealth = Math.max(0, Math.min(maxPlayerHealth, playerHealth + amount));
+  const healthPercent = (playerHealth / maxPlayerHealth) * 100;
+  healthFill.style.width = healthPercent + '%';
+
+  if (playerHealth <= 0) {
+    onGameOver();
+  }
+}
+
+// Common variables
+let trexScene, trexCamera, trexRenderer, trexModel;
+let triceratopsScene, triceratopsCamera, triceratopsRenderer, triceratopsModel;
+let trexMixer, triceratopsMixer;
+let aboutClock = new THREE.Clock();
+
+function createRenderer(container) {
+  const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  container.appendChild(renderer.domElement);
+  return renderer;
+}
+
+function createSceneAndCamera() {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a1a1a);
+  
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 600);
+  camera.position.set(0, 1.5, 8);
+  
+  const light1 = new THREE.DirectionalLight(0xffffff, 1);
+  light1.position.set(5, 10, 7);
+  scene.add(light1);
+
+  const light2 = new THREE.AmbientLight(0x404040, 1.2);
+  scene.add(light2);
+
+  return { scene, camera };
+}
+
+function loadModel(url, scene, onLoad) {
+  const loader = new GLTFLoader();
+  loader.load(url, (gltf) => {
+    const model = gltf.scene;
+    model.scale.set(1, 1, 1);
+    model.position.set(0, 0, 0);
+    scene.add(model);
+    onLoad(model);
+  });
+}
+
+function initAboutDinos() {
+  // T-Rex
+  const trexContainer = document.getElementById('trex-canvas');
+  trexScene = createSceneAndCamera().scene;
+  trexCamera = createSceneAndCamera().camera;
+  trexRenderer = createRenderer(trexContainer);
+
+  // Load T-Rex model
+  loadModel('https://raw.githubusercontent.com/Robert-GainesIII/FlightSim/main/trex.glb', trexScene, (model) => {
+    trexModel = model;
+  });
+
+  // Triceratops
+  const triceratopsContainer = document.getElementById('triceratops-canvas');
+  triceratopsScene = createSceneAndCamera().scene;
+  triceratopsCamera = createSceneAndCamera().camera;
+  triceratopsRenderer = createRenderer(triceratopsContainer);
+
+  // Load Triceratops model
+  loadModel('https://raw.githubusercontent.com/Robert-GainesIII/FlightSim/main/Triceratops.glb', triceratopsScene, (model) => {
+    triceratopsModel = model;
+	triceratopsModel.scale.set(0.3, 0.3, 0.3);
+  });
+
+  animateAbout();
+}
+
+function cleanupAboutDinos() {
+  // Dispose renderers and clear canvases when closing About screen
+  if (trexRenderer) {
+    trexRenderer.dispose();
+    trexRenderer.domElement.remove();
+    trexRenderer = null;
+    trexScene = null;
+    trexCamera = null;
+    trexModel = null;
+  }
+  if (triceratopsRenderer) {
+    triceratopsRenderer.dispose();
+    triceratopsRenderer.domElement.remove();
+    triceratopsRenderer = null;
+    triceratopsScene = null;
+    triceratopsCamera = null;
+    triceratopsModel = null;
+  }
+  cancelAnimationFrame(aboutAnimationId);
+}
+
+let aboutAnimationId;
+function animateAbout() {
+  aboutAnimationId = requestAnimationFrame(animateAbout);
+
+  const delta = aboutClock.getDelta();
+
+  if (trexModel) {
+    trexModel.rotation.y += delta * 0.5;
+  }
+  if (triceratopsModel) {
+    triceratopsModel.rotation.y += delta * 0.5;
+  }
+
+  if (trexRenderer && trexScene && trexCamera) {
+    trexRenderer.render(trexScene, trexCamera);
+  }
+  if (triceratopsRenderer && triceratopsScene && triceratopsCamera) {
+    triceratopsRenderer.render(triceratopsScene, triceratopsCamera);
+  }
+}
+
+function init() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xaee0ff);
+
+  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+  camera.position.set(0, 5, zoomLevel);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+  directionalLight.position.set(5, 10, 7);
+  scene.add(directionalLight);
+  scene.add(new THREE.AmbientLight(0x404040));
+
+  // ADD HILLS AND CURVES TO THE GROUND PLANE
+  const geometry = new THREE.PlaneGeometry(500, 500, 100, 100); // Add segments for curves
+
+  for (let i = 0; i < geometry.attributes.position.count; i++) {
+    const x = geometry.attributes.position.getX(i);
+    const y = geometry.attributes.position.getY(i);
+    const z = Math.sin(x * 0.05) * 2 + Math.cos(y * 0.05) * 2; // hill effect
+    geometry.attributes.position.setZ(i, z);
+  }
+  geometry.computeVertexNormals();
+
+  const material = new THREE.MeshLambertMaterial({ color: 0x228833, side: THREE.DoubleSide });
+  ground = new THREE.Mesh(geometry, material);
+  ground.rotation.x = -Math.PI / 2;
+  scene.add(ground);
+
+  // Add trees with collision boxes
+  const treeMat = new THREE.MeshLambertMaterial({ color: 0x336633 });
+
+  for (let i = 0; i < 100; i++) {
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 4), new THREE.MeshLambertMaterial({ color: 0x8B4513 }));
+    const foliage = new THREE.Mesh(new THREE.ConeGeometry(2, 4, 8), treeMat);
+    const x = Math.random() * 500 - 250;
+    const z = Math.random() * 500 - 250;
+    trunk.position.set(x, 2, z);
+    foliage.position.set(x, 5, z);
+
+    // Add to scene
+    scene.add(trunk);
+    scene.add(foliage);
+
+    // Create a combined bounding box for the tree
+    const treeGroup = new THREE.Group();
+    treeGroup.add(trunk);
+    treeGroup.add(foliage);
+    scene.add(treeGroup);
+
+    // Compute and store bounding box
+    const box = new THREE.Box3().setFromObject(treeGroup);
+    treeColliders.push(box);
+  }
+
+  const loader = new GLTFLoader();
+  const dinoURL = "https://raw.githubusercontent.com/Robert-GainesIII/FlightSim/main/Triceratops.glb";
+  loader.load(dinoURL, gltf => {
+    dinosaur = gltf.scene;
+    dinosaur.scale.set(.5, .5, .5);
+    dinosaur.position.set(0, 0, 0);
+    dinosaur.boundingBox = new THREE.Box3().setFromObject(dinosaur);
+	//const helper = new THREE.Box3Helper(dinosaur.boundingBox, 0xff0000);
+	//scene.add(helper);
+    dinosaur.takeDamage = function(amount) {
+      updatePlayerHealth(-10);
+      //console.log(`Player health: ${playerHealth}`);
+      if (playerHealth <= 0) {
+        //console.log("Player died! Game Over.");
+        // Add game over logic here if desired
+      }
+    }
+    scene.add(dinosaur);
+
+    mixer = new THREE.AnimationMixer(dinosaur);
+
+    gltf.animations.forEach(clip => {
+      const name = clip.name.replace("Armature|Triceratops_", "").toLowerCase();
+      animations[name] = mixer.clipAction(clip);
+    });
+
+    playAnimation("idle");
+  });
+
+  clock = new THREE.Clock();
+
+  window.addEventListener('resize', onWindowResize);
+  window.addEventListener('keydown', e => keysPressed[e.key.toLowerCase()] = true);
+  window.addEventListener('keyup', e => keysPressed[e.key.toLowerCase()] = false);
+  window.addEventListener('wheel', onMouseWheel, { passive: false });
+}
+
+// Enemy class definition
+class Enemy {
+  constructor(model, position) {
+    this.model = model;
+    this.model.position.copy(position);
+    this.speed = 5;
+    this.health = 100;
+    this.maxHealth = 100;
+    this.alive = true;
+	this.deathPlayed = false;
+
+    // Animation setup
+    this.mixer = new THREE.AnimationMixer(this.model);
+    this.animations = {};
+    this.currentAction = null;
+
+    // 3D Health bar setup
+    const barWidth = 1;
+    const barHeight = 0.15;
+    const bgGeo = new THREE.PlaneGeometry(barWidth, barHeight);
+    const bgMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    this.healthBarBackground = new THREE.Mesh(bgGeo, bgMat);
+    this.healthBarBackground.position.set(0, 2.5, 0);
+    this.model.add(this.healthBarBackground);
+
+    const healthGeo = new THREE.PlaneGeometry(barWidth, barHeight);
+    const healthMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    this.healthBar = new THREE.Mesh(healthGeo, healthMat);
+    this.healthBar.position.set(0, 0, 0.01); // avoid z-fighting
+    this.healthBarBackground.add(this.healthBar);
+
+    // Bounding box for collision
+    this.boundingBox = new THREE.Box3();
+    this.updateBoundingBox();
+	//const helper = new THREE.Box3Helper(this.boundingBox, 0xff0000);
+	//scene.add(helper);
+    // Attack cooldown management
+    this.attackCooldown = 1.5; // seconds
+    this.lastAttackTime = 0;
+  }
+
+  updateBoundingBox() {
+    this.boundingBox.setFromObject(this.model);
+  }
+
+  updateHealthBar() {
+    const healthPercent = THREE.MathUtils.clamp(this.health / this.maxHealth, 0, 1);
+    this.healthBar.scale.x = healthPercent;
+    this.healthBar.position.x = (healthPercent - 1) * 0.5; // Keep left-aligned
+  }
+
+  playAnimation(name) {
+    if (!this.animations[name]) {
+    //console.warn(`Animation '${name}' not found for enemy`);
+    return;
+  }
+
+  //console.log(`Playing animation: ${name}`);
+    if (this.currentAction === this.animations[name]) return;
+
+    if (this.currentAction) this.currentAction.fadeOut(0.2);
+    this.currentAction = this.animations[name];
+    this.currentAction.reset().fadeIn(0.2).play();
+  }
+
+  update(delta, player, obstaclesBoundingBoxes, groundMesh) {
+  this.mixer.update(delta);
+  
+    if (!this.alive) {
+    // Only trigger death animation once
+    if (!this.deathPlayed) {
+      this.playAnimation('trex_death');
+      this.deathPlayed = true;
+    }
+    return;
+  }
+
+    
+    this.updateBoundingBox();
+
+    const dist = this.model.position.distanceTo(player.position);
+
+    if (dist > 7) {
+      // Move toward player with collision check
+      this.playAnimation('trex_run');
+
+      const direction = new THREE.Vector3().subVectors(player.position, this.model.position).normalize();
+      const moveVector = direction.clone().multiplyScalar(this.speed * delta);
+      this.model.position.add(moveVector);
+      this.model.lookAt(player.position);
+
+      this.updateBoundingBox();
+
+      // Collision detection with trees
+      let collision = false;
+      for (const obstacleBox of obstaclesBoundingBoxes) {
+        if (this.boundingBox.intersectsBox(obstacleBox)) {
+          collision = true;
+          break;
+        }
+      }
+
+      if (collision) {
+        // Undo move if collision detected
+        this.model.position.sub(moveVector);
+        this.updateBoundingBox();
+      }
+
+      // Keep enemy on the ground using raycaster
+      const raycaster = new THREE.Raycaster();
+      const rayOrigin = this.model.position.clone();
+      rayOrigin.y += 10;
+      raycaster.set(rayOrigin, new THREE.Vector3(0, -1, 0));
+      const intersects = raycaster.intersectObject(groundMesh);
+
+      if (intersects.length > 0) {
+        this.model.position.y = intersects[0].point.y;
+      }
+
+    } else {
+      // Attack player if cooldown elapsed
+      this.playAnimation('trex_roar');
+      const now = performance.now() / 1000;
+      if (now - this.lastAttackTime > this.attackCooldown) {
+        player.takeDamage(10); // assumes player has a takeDamage method
+        this.lastAttackTime = now;
+      }
+    }
+
+    this.updateHealthBar();
+  }
+
+  takeDamage(amount) {
+    this.health -= amount;
+    if (this.health <= 0) {
+      this.health = 0;
+      if (this.alive) {
+		  this.alive = false;
+		  scene.remove(this.model);
+		  const particles = createDeathParticles(this.model.position);
+		  deathParticlesArray.push(particles)
+		  this.deathTime = performance.now(); // Mark time of death
+		}
+    }
+  }
+}
+
+let isPlayingUninterruptible = false;
+
+function playAnimation(name, { loopOnce = false, onComplete = 'idle', force = false } = {}) {
+  if (!mixer || !animations[name]) return;
+
+  // Prevent interrupting uninterruptible animations like 'attack'
+  if (isPlayingUninterruptible && !force) return;
+
+  const nextAction = animations[name];
+
+  if (currentAction && currentAction !== nextAction) {
+    currentAction.fadeOut(0.3);
+  }
+
+  currentAction = nextAction;
+  currentAction.reset();
+  currentAction.fadeIn(0.3);
+
+  if (loopOnce) {
+    currentAction.setLoop(THREE.LoopOnce, 1);
+    currentAction.clampWhenFinished = true;
+
+    isPlayingUninterruptible = true;
+
+    mixer.addEventListener('finished', function handler(e) {
+      if (e.action === currentAction) {
+        mixer.removeEventListener('finished', handler);
+        isPlayingUninterruptible = false;
+        if (onComplete) onComplete();
+      }
+    });
+  } else {
+    currentAction.setLoop(THREE.LoopRepeat);
+    currentAction.clampWhenFinished = false;
+    isPlayingUninterruptible = false;
+  }
+
+  currentAction.play();
+}
+
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function onMouseWheel(event) {
+  event.preventDefault();
+  zoomLevel += event.deltaY * 0.01;
+  zoomLevel = THREE.MathUtils.clamp(zoomLevel, 5, 25);
+}
+
+function checkCollision(boxA, boxB) {
+  return boxA.intersectsBox(boxB);
+}
+
+
+function applyAttackDamage() {
+  const attackRange = new THREE.Vector3(1,1,1); // Width, height, depth of attack box
+
+  // Direction the dinosaur is facing
+  const forward = new THREE.Vector3(0, 0, 2); // Assuming model faces -Z
+  forward.applyQuaternion(dinosaur.quaternion); // Rotate forward by the dino's orientation
+
+  // Offset the attack box to be in front of the dinosaur
+  const attackOffset = forward.clone().multiplyScalar(2); // Adjust scalar for reach
+  const attackCenter = dinosaur.position.clone().add(attackOffset).add(new THREE.Vector3(0, 1, 0)); // Add vertical offset if needed
+
+  // Create the attack box
+  const attackBox = new THREE.Box3().setFromCenterAndSize(attackCenter, attackRange);
+
+  // Debug helper
+  //if (window.attackHelper) scene.remove(window.attackHelper);
+  //window.attackHelper = new THREE.Box3Helper(attackBox, 0xff0000);
+  //scene.add(window.attackHelper);
+
+  // Check collisions
+  enemies.forEach(enemy => {
+    enemy.updateBoundingBox();
+    if (checkCollision(attackBox, enemy.boundingBox)) {
+      enemy.takeDamage(25);
+      //console.log(`Enemy hit! Enemy health: ${enemy.health}`);
+    }
+  });
+}
+
+
+function updatePlayer(delta) {
+  if (!dinosaur) return;
+
+  const speed = 10;
+  const rotationSpeed = 3;
+
+  // Movement controls (WASD)
+  let moveForward = keysPressed['w'] || keysPressed['arrowup'];
+  let moveBackward = keysPressed['s'] || keysPressed['arrowdown'];
+  let moveLeft = keysPressed['a'] || keysPressed['arrowleft'];
+  let moveRight = keysPressed['d'] || keysPressed['arrowright'];
+
+  let velocity = new THREE.Vector3();
+
+  if (moveForward) velocity.z += 1;
+  if (moveBackward) velocity.z -= 1;
+  if (moveLeft) dinosaur.rotation.y += rotationSpeed * delta;
+  if (moveRight) dinosaur.rotation.y -= rotationSpeed * delta;
+
+  if (velocity.length() > 0) {
+    velocity.normalize();
+    velocity.applyAxisAngle(new THREE.Vector3(0, 1, 0), dinosaur.rotation.y);
+    dinosaur.position.addScaledVector(velocity, speed * delta);
+    if (currentAction !== animations['run']) playAnimation('run', {
+											  loopOnce: false,
+											  onComplete: () => {
+												playAnimation('idle');
+											  }
+											});
+  } else {
+    if (currentAction !== animations['idle']) playAnimation('idle', {
+											  loopOnce: false,
+											  onComplete: () => {
+												playAnimation('idle');
+											  }
+											});
+  }
+
+  // Align dinosaur with ground height using raycast
+  const rayOrigin = dinosaur.position.clone();
+  rayOrigin.y += 20;
+  raycaster.set(rayOrigin, new THREE.Vector3(0, -1, 0));
+  const intersects = raycaster.intersectObject(ground);
+  if (intersects.length > 0) {
+    dinosaur.position.y = intersects[0].point.y;
+  }
+  
+  dinosaur.boundingBox.setFromObject(dinosaur);
+
+  // Attack on 'f' key
+   if (keysPressed['f'] && !isAttacking) {
+    if (performance.now() / 1000 - lastAttackTime > attackCooldown) {
+      isAttacking = true;
+      lastAttackTime = performance.now() / 1000;
+      playAnimation('attack', {
+	  loopOnce: true,
+	  onComplete: () => {
+		playAnimation('idle');
+	  }
+	});
+
+      // Damage is applied after a short delay to sync with the swing
+      setTimeout(() => {
+        applyAttackDamage();
+      }, 300);  // Adjust 300ms to match swing moment in animation
+
+      // When attack animation ends, reset to idle
+      // Assuming attack animation length is ~1 second:
+      setTimeout(() => {
+        isAttacking = false;
+        playAnimation('idle');
+      }, 1000);
+    }
+  }
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const delta = clock.getDelta();
+
+  if (mixer) mixer.update(delta);
+  
+  if (!gameStarted) {
+    renderer.render(scene, camera);
+    return;
+  }
+  // Update enemies
+  enemies = enemies.filter(enemy => {
+  if (!enemy.alive) {
+    // Ensure death animation keeps playing
+    enemy.mixer.update(delta);
+
+    if (!enemy.deathTime) {
+      enemy.deathTime = performance.now();
+      enemy.playAnimation('death'); // Ensure it starts if not already playing
+      return true;
+    }
+
+    const timeSinceDeath = (performance.now() - enemy.deathTime) / 1000;
+    if (timeSinceDeath > 2) {
+      scene.remove(enemy.model);
+      return false; // Remove from array
+    }
+
+    return true;
+  }
+
+  // Enemy is alive
+  enemy.update(delta, dinosaur, treeColliders, ground);
+  return true;
+});
+  
+  if (dinosaur) updatePlayer(delta);
+
+  
+
+  if (dinosaur) {
+  const distance = THREE.MathUtils.mapLinear(zoomLevel, 5, 25, 5, 15); // how far behind
+  const height = THREE.MathUtils.mapLinear(zoomLevel, 5, 25, 4, 12);   // how high above
+
+  // Offset behind and above the dino
+  const offset = new THREE.Vector3(0, height, -distance);
+  offset.applyQuaternion(dinosaur.quaternion); // rotate with dino
+
+  const desiredPos = dinosaur.position.clone().add(offset);
+  camera.position.lerp(desiredPos, 0.1);
+
+  // Look slightly ahead of the dino to see more of the world
+  const lookAhead = new THREE.Vector3(0, 2, 5).applyQuaternion(dinosaur.quaternion);
+  const lookTarget = dinosaur.position.clone().add(lookAhead);
+  camera.lookAt(lookTarget);
+}
+
+
+  
+  // Update existing death particle systems
+  for (let i = deathParticlesArray.length - 1; i >= 0; i--) {
+    const particles = deathParticlesArray[i];
+    const positions = particles.geometry.attributes.position.array;
+    const velocities = particles.userData.velocities;
+
+    for (let j = 0; j < positions.length; j += 3) {
+      positions[j] += velocities[j / 3 * 3] * delta;
+      positions[j + 1] += velocities[j / 3 * 3 + 1] * delta - 0.98 * delta; // gravity effect
+      positions[j + 2] += velocities[j / 3 * 3 + 2] * delta;
+
+      // Slow down velocities gradually (drag)
+      velocities[j / 3 * 3] *= 0.95;
+      velocities[j / 3 * 3 + 1] *= 0.95;
+      velocities[j / 3 * 3 + 2] *= 0.95;
+    }
+
+    particles.geometry.attributes.position.needsUpdate = true;
+
+    // Fade out particles over time
+    particles.material.opacity -= delta * 0.5;
+    if (particles.material.opacity <= 0) {
+      scene.remove(particles);
+      deathParticlesArray.splice(i, 1);
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+function createDeathParticles(position) {
+  const particleCount = 300;
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(particleCount * 3);
+  const velocities = [];
+
+  for (let i = 0; i < particleCount; i++) {
+    // Start particles at the death position (with a little random offset)
+    positions[i * 3] = position.x + (Math.random() - 0.5) * 1 ;
+    positions[i * 3 + 1] = position.y + (Math.random() - 0.5) * 0.5 + 3;
+    positions[i * 3 + 2] = position.z + (Math.random() - 0.5) * 1;
+
+    // Random velocity for each particle to fly outward
+    velocities.push(
+      (Math.random() - 0.5) * 4,
+      Math.random() * 4,
+      (Math.random() - 0.5) * 4
+    );
+  }
+
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  const material = new THREE.PointsMaterial({
+    color: 0xff0000,
+    size: 0.4,
+    transparent: true,
+    opacity: 0.8,
+  });
+
+  const particles = new THREE.Points(geometry, material);
+  particles.userData = { velocities };
+
+  scene.add(particles);
+
+  return particles;
+}
+
+// Load enemies from GLTF, spawn them at random positions
+function spawnEnemies(url, count = 2) {
+  const loader = new GLTFLoader();
+  loader.load(url, gltf => {
+    const enemyModel = gltf.scene;
+    enemyModel.scale.set(2.5, 2.5, 2.5);
+
+    // Setup enemy animations
+    const mixer = new THREE.AnimationMixer(enemyModel);
+    const anims = {};
+	let i = 0;
+    gltf.animations.forEach(clip => {
+      const name = clip.name.toLowerCase();
+	  //console.log(`${i}: ${clip.name}`)
+      anims[name] = mixer.clipAction(clip);
+    });
+
+    for (let i = 0; i < count; i++) {
+      const clone = enemyModel.clone();
+      clone.position.set(Math.random() * 100 - 50, 0, Math.random() * 100 - 50);
+
+      // Copy mixer and animations for each enemy
+      const enemy = new Enemy(clone, clone.position);
+      enemy.mixer = new THREE.AnimationMixer(clone);
+      enemy.animations = {};
+      gltf.animations.forEach(clip => {
+        const name = clip.name.toLowerCase();
+        enemy.animations[name] = enemy.mixer.clipAction(clip);
+      });
+      enemy.playAnimation('trex_idle');
+      scene.add(clone);
+      enemies.push(enemy);
+    }
+  });
+}
+
+spawnEnemies("https://raw.githubusercontent.com/Robert-GainesIII/FlightSim/main/trex.glb", 2);
+
+</script>
+</body>
+</html>
