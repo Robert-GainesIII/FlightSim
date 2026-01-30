@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Cursed Dungeon - Remastered</title>
+    <style>
+        body { margin: 0; background: #020202; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        canvas { background: #050505; border: 3px solid #1a1a1a; image-rendering: pixelated; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// --- ENGINE CONFIG ---
+const VIRTUAL_WIDTH = 900; 
+const VIRTUAL_HEIGHT = 450;
+
+function resize() {
+    const targetHeight = window.innerHeight * 0.6; 
+    const scale = targetHeight / VIRTUAL_HEIGHT;
+    canvas.width = VIRTUAL_WIDTH * scale;
+    canvas.height = VIRTUAL_HEIGHT * scale;
+    ctx.scale(scale, scale);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// --- ASSETS ---
+const BASE_URL = 'https://raw.githubusercontent.com/Robert-GainesIII/FlightSim/main/';
+const assets = { idle: [], run: [], jump: [], attack: [], attack2: [], attack3: [], enemyCrawl: [] }; 
+let loadedCount = 0;
+const TOTAL_ASSETS = 36; 
+
+function loadGroup(name, array, count = 4) {
+    for (let i = 0; i < count; i++) {
+        const img = new Image();
+        const frameNum = i.toString().padStart(3, '0');
+        img.src = `${BASE_URL}${name}_${frameNum}.png`;
+        img.onload = () => { if(++loadedCount === TOTAL_ASSETS) requestAnimationFrame(gameLoop); };
+        array.push(img);
+    }
+}
+
+loadGroup('IdleFrame', assets.idle);
+loadGroup('RunFrame', assets.run);
+loadGroup('JumpFrame', assets.jump);
+loadGroup('AttackFrame', assets.attack);
+loadGroup('Attack2Frame', assets.attack2);
+loadGroup('Attack3Frame', assets.attack3, 16); 
+loadGroup('Enemy2CrawlFrame', assets.enemyCrawl);
+
+// --- GAME STATE ---
+const player = {
+    x: 400, y: 300, velX: 0, velY: 0, hp: 100,
+    facing: 1, state: 'idle', frame: 0, animTick: 0,
+    isGrounded: true, wasGrounded: true, comboStep: 0, comboQueued: false, score: 0
+};
+
+let dungeonSections = []; 
+let enemies = [], particles = [], keys = {};
+let camX = 0, lastGenX = 0, gameTime = 0;
+
+class Particle {
+    constructor(x, y, color, vx, vy, size, lifeDec = 0.03) {
+        this.x = x; this.y = y; this.color = color;
+        this.vx = vx; this.vy = vy;
+        this.life = 1.0; this.size = size; this.lifeDec = lifeDec;
+    }
+    update() { this.x += this.vx; this.y += this.vy; this.life -= this.lifeDec; }
+    draw() { 
+        ctx.globalAlpha = this.life; 
+        ctx.fillStyle = this.color; 
+        ctx.fillRect(this.x - camX, this.y, this.size, this.size); 
+        ctx.globalAlpha = 1.0;
+    }
+}
+
+function createDust(x, y, count = 5) {
+    for(let i=0; i<count; i++) {
+        particles.push(new Particle(x, y, "#444", (Math.random()-0.5)*2, -Math.random()*1, 3, 0.05));
+    }
+}
+
+class Enemy {
+    constructor(x, y) {
+        this.x = x; this.y = y; this.velX = 0; this.hp = 100; this.maxHp = 100;
+        this.facing = -1; this.frame = 0; this.animTick = 0;
+        this.isDead = false; this.hitStop = 0;
+    }
+    update() {
+        if (this.isDead || this.hitStop > 0) { if(this.hitStop > 0) this.hitStop--; return; }
+        let onBridge = false;
+        dungeonSections.forEach(s => { if (this.x > s.x && this.x < s.x + s.w && s.type === 'LAVA') onBridge = true; });
+        let targetY = onBridge ? 276 : 300; 
+        this.y += (targetY - this.y) * 0.1;
+        let dist = player.x - this.x;
+        this.facing = dist > 0 ? 1 : -1;
+        if (Math.abs(dist) > 30) this.velX += this.facing * 0.15;
+        this.x += this.velX; this.velX *= 0.92;
+        this.animTick++;
+        if (this.animTick >= 12) { this.animTick = 0; this.frame = (this.frame + 1) % 4; }
+    }
+    drawHP() {
+        if (this.hp <= 0) return;
+        ctx.fillStyle = "#300"; ctx.fillRect(this.x - camX + 10, this.y + 10, 40, 4);
+        ctx.fillStyle = "#f00"; ctx.fillRect(this.x - camX + 10, this.y + 10, (this.hp/this.maxHp)*40, 4);
+    }
+}
+
+function generateSection() {
+    const types = ['HALL', 'PRISON', 'LAVA'];
+    const type = types[Math.floor(Math.random() * types.length)];
+    const width = 800;
+    let clutter = [];
+    for(let i=0; i<4; i++) {
+        clutter.push({ type: ['SKULL', 'CHAIN', 'LANTERN'][Math.floor(Math.random()*3)], x: Math.random() * width, y: 10 + Math.random() * 50, swingOff: Math.random() * 10 });
+    }
+    dungeonSections.push({ x: lastGenX, w: width, type: type, clutter: clutter });
+    if (Math.random() > 0.4) enemies.push(new Enemy(lastGenX + 600, 300));
+    lastGenX += width;
+}
+
+for(let i=0; i<3; i++) generateSection();
+
+window.onkeydown = (e) => keys[e.code] = true;
+window.onkeyup = (e) => keys[e.code] = false;
+window.onmousedown = (e) => {
+    if (e.button === 0 && !player.state.includes('attack')) { player.comboStep = 0; startAttackPhase(); } 
+    else if (e.button === 0) { player.comboQueued = true; }
+};
+
+function startAttackPhase() {
+    player.animTick = 0; player.comboQueued = false;
+    if (player.comboStep === 0) { player.state = 'attack'; player.frame = 0; player.velX += player.facing * 8; } 
+    else if (player.comboStep === 1) { player.state = 'attack3'; player.frame = 0; } 
+    else if (player.comboStep === 2) { player.state = 'attack3'; player.frame = 8; } 
+    else if (player.comboStep === 3) { player.state = 'attack2'; player.frame = 0; player.velX += player.facing * 12; }
+}
+
+function checkCombat() {
+    const hitX = player.x + (player.facing * 50);
+    enemies.forEach(e => {
+        if (!e.isDead && Math.abs(hitX - (e.x + 32)) < 80) {
+            e.hp -= (player.state === 'attack2') ? 50 : 25;
+            e.velX = player.facing * 10;
+            e.hitStop = 8;
+            for(let i=0; i<10; i++) particles.push(new Particle(e.x+32, e.y+40, "#cc0000", (Math.random()-0.5)*10, -Math.random()*5, 3));
+            if (e.hp <= 0) { e.isDead = true; player.score += 100; }
+        }
+    });
+}
+
+function update() {
+    gameTime++;
+    player.velY += 0.8; player.x += player.velX; player.y += player.velY; player.velX *= 0.88;
+    player.isGrounded = false;
+    dungeonSections.forEach(s => {
+        if (player.x > s.x && player.x < s.x + s.w) {
+            if (s.type === 'LAVA') {
+                if (player.y + 64 >= 340 && player.y + 64 <= 360 && player.velY >= 0) { player.y = 340-64; player.velY = 0; player.isGrounded = true; }
+            } else if (player.y >= 300) { player.y = 300; player.velY = 0; player.isGrounded = true; }
+        }
+    });
+
+    if (player.isGrounded && !player.wasGrounded) createDust(player.x+32, player.y+64);
+    player.wasGrounded = player.isGrounded;
+
+    if (player.y > 400) { player.hp -= 1; player.velY = -10; }
+    if (keys['Space'] && player.isGrounded) { player.velY = -15; player.isGrounded = false; createDust(player.x+32, player.y+64); }
+
+    if (!player.state.includes('attack')) {
+        if (keys['KeyA']) { player.velX -= 0.8; player.facing = -1; }
+        if (keys['KeyD']) { player.velX += 0.8; player.facing = 1; }
+        player.state = !player.isGrounded ? 'jump' : (Math.abs(player.velX) > 0.6 ? 'run' : 'idle');
+        player.animTick++;
+        if (player.animTick >= 8) { player.animTick = 0; player.frame = (player.frame + 1) % 4; }
+    } else {
+        player.animTick++;
+        let limit = (player.state === 'attack3') ? 4 : 7;
+        if (player.animTick >= limit) {
+            player.animTick = 0; player.frame++;
+            if (player.frame === 2 || player.frame === 10) checkCombat();
+            if (player.frame >= assets[player.state].length || (player.comboStep === 1 && player.frame >= 8)) {
+                if (player.comboQueued && player.comboStep < 3) { player.comboStep++; startAttackPhase(); }
+                else { player.state = 'idle'; player.frame = 0; player.comboStep = 0; }
+            }
+        }
+    }
+    if (player.x + 1000 > lastGenX) generateSection();
+    enemies = enemies.filter(e => !e.isDead);
+    enemies.forEach(e => e.update());
+    particles.forEach((p, i) => { p.update(); if(p.life <= 0) particles.splice(i, 1); });
+    camX += (player.x - VIRTUAL_WIDTH/2 - camX) * 0.1;
+}
+
+function draw() {
+    ctx.filter = "none";
+    ctx.clearRect(0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
+    
+    // --- PARALLAX ---
+    let px1 = -camX * 0.1;
+    ctx.fillStyle = "#0a0a0a";
+    for(let i=-1000; i<lastGenX; i+=300) {
+        ctx.beginPath(); ctx.moveTo(i+px1, 364); ctx.lineTo(i+px1, 150);
+        ctx.quadraticCurveTo(i+px1+75, 50, i+px1+150, 150); ctx.lineTo(i+px1+150, 364); ctx.fill();
+    }
+    let px2 = -camX * 0.25;
+    ctx.fillStyle = "#0f0f0f";
+    for(let i=-1000; i<lastGenX; i+=400) { ctx.fillRect(i+px2, 0, 40, 364); }
+
+    // --- MAIN ---
+    dungeonSections.forEach(s => {
+        s.clutter.forEach(c => {
+            let swing = Math.sin(gameTime * 0.05 + c.swingOff) * 10;
+            if (c.type === 'LANTERN') {
+                ctx.strokeStyle = "#1a1a1a"; ctx.beginPath(); ctx.moveTo(s.x + c.x - camX, 0); ctx.lineTo(s.x + c.x - camX + swing, c.y + 100); ctx.stroke();
+                ctx.fillStyle = `rgba(255, 120, 0, ${0.15 + Math.random()*0.05})`; ctx.beginPath(); ctx.arc(s.x + c.x - camX + swing, c.y + 108, 20, 0, Math.PI*2); ctx.fill();
+            }
+        });
+        if (s.type === 'LAVA') {
+            for(let i=0; i<s.w; i+=20) { ctx.fillStyle = "#cc3300"; ctx.fillRect(s.x+i-camX, 364+Math.sin((gameTime*0.1)+(s.x+i))*5, 21, 50); }
+            ctx.strokeStyle = "#3d1f00"; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(s.x-camX, 300); ctx.quadraticCurveTo(s.x+s.w/2-camX, 330, s.x+s.w-camX, 300); ctx.stroke();
+            ctx.fillStyle = "#2d1600"; for(let j=0; j<s.w; j+=25) ctx.fillRect(s.x+j-camX, 340, 20, 8);
+        } else { ctx.fillStyle = "#151515"; ctx.fillRect(s.x-camX, 364, s.w, 86); }
+    });
+
+    enemies.forEach(e => {
+        const img = assets.enemyCrawl[e.frame];
+        if (img) {
+            ctx.save(); ctx.translate(e.x-camX+32, e.y+74); ctx.scale(-e.facing, 1);
+            if (e.hitStop > 0) ctx.filter = "brightness(3)";
+            ctx.drawImage(img, -img.width/2, -img.height); ctx.restore(); ctx.filter = "none";
+            e.drawHP();
+        }
+    });
+
+    const pImg = assets[player.state][Math.min(player.frame, assets[player.state].length-1)];
+    if (pImg) {
+        ctx.save();
+        // RESTORED OFFSETS: 1st/4th = 15, 2nd/3rd = 23
+        let yOff = 0;
+        if (player.state.includes('attack')) {
+            yOff = (player.comboStep === 0 || player.comboStep === 3) ? 15 : 23;
+        }
+        ctx.translate(player.x-camX+32, player.y+64+yOff); ctx.scale(player.facing, 1); 
+        ctx.drawImage(pImg, -pImg.width/2, -pImg.height); ctx.restore();
+    }
+
+    particles.forEach(p => p.draw());
+    let v = ctx.createRadialGradient(VIRTUAL_WIDTH/2, VIRTUAL_HEIGHT/2, 100, VIRTUAL_WIDTH/2, VIRTUAL_HEIGHT/2, 600);
+    v.addColorStop(0, "transparent"); v.addColorStop(1, "rgba(0,0,0,0.8)");
+    ctx.fillStyle = v; ctx.fillRect(0,0,VIRTUAL_WIDTH,VIRTUAL_HEIGHT);
+    ctx.fillStyle = "#200"; ctx.fillRect(20, 20, 200, 10); ctx.fillStyle = "#f00"; ctx.fillRect(20, 20, player.hp*2, 10);
+}
+
+function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
+</script>
+</body>
+</html>
